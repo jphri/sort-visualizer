@@ -1,24 +1,28 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <math.h>
 #include <unistd.h>
 #include <assert.h>
 #include <stdint.h>
 #include <cairo.h>
 
-#include <sys/socket.h>
-
 #define WIDTH  800
 #define HEIGHT 600
 
-#define FPS 1.0/60.0
+#define FPS         (1.0/60.0)
+#define AUDIO_FREQ  (1.0/44100.0)
+#define BUFFER_SIZE (FPS/AUDIO_FREQ)
 
 typedef int32_t i32;
 
 static double get_time();
 
+static void make_audio(int v1, int v2);
+static void make_frame(int v1, int v2);
 static void render(int v1, int v2);
 static void write_frame();
+static void write_audio();
 static void check_position(int i);
 static void wait(i32 time);
 
@@ -56,11 +60,14 @@ static i32 *sub_array;
 static float target_framerate;
 static double prev_time;
 static double exit_time, process_time;
+static const char *sort_name;
+
+static i32 width, height;
 static cairo_surface_t *surface;
 static cairo_t *cairo;
-static i32 width, height;
 
-static const char *sort_name;
+static short audio_buffer[(int)BUFFER_SIZE];
+static float old_audio_p1 = 0;
 
 int
 main()
@@ -161,7 +168,7 @@ bubble_sort()
 	for(i32 k = 0; k < array_size; k++)
 	for(i32 i = 0; i < array_size - 1; i++) {
 		if(compare(i, i + 1) > 0) {
-			swap(i, i + 1);
+			swap(i + 1, i);
 		}
 	}
 }
@@ -383,89 +390,120 @@ quick_sub_sort(i32 start, i32 end)
 }
 
 void
-render(int p1, int p2)
+make_frame(int p1, int p2)
 {
 	char buffer[1024];
+	int bar_height = height - 100;
+
+	cairo_set_source_rgba(cairo, 0.0, 0.0, 0.0, 1.0);
+	cairo_rectangle(cairo, 0, 0, width, height);
+	cairo_fill(cairo);
+
+	for(i32 i = 0; i < array_size; i++) {
+		i32 bh = (array[i] * bar_height) / array_size;
+		double r, g, b;
+		if(i == p1 || i == p2) {
+			r = 1.0;
+			g = 0.0;
+			b = 0.0;
+		} else {
+			if(i < checked_array) {
+				r = 0.0;
+				g = 1.0;
+				b = 0.0;
+			} else {
+				r = 1.0;
+				g = 1.0;
+				b = 1.0;
+			}
+		}
+
+		cairo_set_source_rgba(cairo, r, g, b, 0.5);
+		cairo_move_to(cairo, (i * width) / array_size, height);
+		cairo_line_to(cairo, (i * width) / array_size, height - bh);
+		cairo_stroke(cairo);
+	}
+
+	cairo_set_source_rgba(cairo, 1.0, 1.0, 0.0, 1.0);
+	cairo_set_font_size(cairo, 16);
+
+	cairo_move_to(cairo, 15, 15);
+	snprintf(buffer, sizeof(buffer), 
+			"Sort name: %s",
+			sort_name ? sort_name : "(no name)",
+			process_time * 1000);
+	cairo_show_text(cairo, buffer);
+	cairo_fill(cairo);
+
+	cairo_move_to(cairo, 15, 15 + 16 * 1);
+	snprintf(buffer, sizeof(buffer), 
+			"Array size: %d",
+			array_size);
+	cairo_show_text(cairo, buffer);
+	cairo_fill(cairo);
+
+	cairo_move_to(cairo, 15, 15 + 16 * 2);
+	snprintf(buffer, sizeof(buffer), 
+			"Array Access: %d",
+			array_access);
+	cairo_show_text(cairo, buffer);
+	cairo_fill(cairo);
+
+	cairo_move_to(cairo, 15, 15 + 16 * 3);
+	snprintf(buffer, sizeof(buffer), 
+			"Comparisons: %d",
+			comparisons);
+	cairo_show_text(cairo, buffer);
+	cairo_fill(cairo);
+
+	cairo_move_to(cairo, 15, 15 + 16 * 4);
+	snprintf(buffer, sizeof(buffer), 
+			"Process Time: %f ms", 
+			process_time * 1000);
+	cairo_show_text(cairo, buffer);
+	cairo_fill(cairo);
+}
+
+void
+make_audio(int p1, int p2)
+{
+	(void)p2;	
+	static double phase_accum = 0;
+	float freq_scale = (float)array[p1] / array_size;
+
+	for(int i = 0; i < BUFFER_SIZE; i++) {
+		const double new_freq = 220 + freq_scale * 780;
+		const double new_phase = 2 * 3.1415926535 * new_freq * phase_accum;
+		const double new_wave = sinf(new_phase);
+		
+		const double old_freq = 220 + old_audio_p1 * 780;
+		const double old_phase = 2 * 3.1415926535 * old_freq * phase_accum;
+		const double old_wave = sinf(old_phase);
+		
+		double wave = new_wave * (i / BUFFER_SIZE) + old_wave * (1 - i / BUFFER_SIZE);
+		audio_buffer[i] = wave * 32767 / 8;
+
+		phase_accum += AUDIO_FREQ;
+	}
+	old_audio_p1 = freq_scale;
+}
+
+void
+render(int p1, int p2)
+{
 	double current_time = get_time();
 	double delta = current_time - prev_time;
 	double delta_process = current_time - exit_time;
 	prev_time = current_time;
-	int bar_height = height - 100;
-
 	static int accumulator;
 
 	process_time += delta_process;
 
 	if(++accumulator > skip_frames) {
-		cairo_set_source_rgba(cairo, 0.0, 0.0, 0.0, 1.0);
-		cairo_rectangle(cairo, 0, 0, width, height);
-		cairo_fill(cairo);
-
-		for(i32 i = 0; i < array_size; i++) {
-			i32 bh = (array[i] * bar_height) / array_size;
-			double r, g, b;
-			if(i == p1 || i == p2) {
-				r = 1.0;
-				g = 0.0;
-				b = 0.0;
-			} else {
-				if(i < checked_array) {
-					r = 0.0;
-					g = 1.0;
-					b = 0.0;
-				} else {
-					r = 1.0;
-					g = 1.0;
-					b = 1.0;
-				}
-			}
-
-			cairo_set_source_rgba(cairo, r, g, b, 0.5);
-			cairo_move_to(cairo, (i * width) / array_size, height);
-			cairo_line_to(cairo, (i * width) / array_size, height - bh);
-			cairo_stroke(cairo);
-		}
-		
-		cairo_set_source_rgba(cairo, 1.0, 1.0, 0.0, 1.0);
-		cairo_set_font_size(cairo, 16);
-
-		cairo_move_to(cairo, 15, 15);
-		snprintf(buffer, sizeof(buffer), 
-				"Sort name: %s",
-				sort_name ? sort_name : "(no name)",
-				process_time * 1000);
-		cairo_show_text(cairo, buffer);
-		cairo_fill(cairo);
-
-		cairo_move_to(cairo, 15, 15 + 16 * 1);
-		snprintf(buffer, sizeof(buffer), 
-				"Array size: %d",
-				array_size);
-		cairo_show_text(cairo, buffer);
-		cairo_fill(cairo);
-
-		cairo_move_to(cairo, 15, 15 + 16 * 2);
-		snprintf(buffer, sizeof(buffer), 
-				"Array Access: %d",
-				array_access);
-		cairo_show_text(cairo, buffer);
-		cairo_fill(cairo);
-
-		cairo_move_to(cairo, 15, 15 + 16 * 3);
-		snprintf(buffer, sizeof(buffer), 
-				"Comparisons: %d",
-				comparisons);
-		cairo_show_text(cairo, buffer);
-		cairo_fill(cairo);
-
-		cairo_move_to(cairo, 15, 15 + 16 * 4);
-		snprintf(buffer, sizeof(buffer), 
-				"Process Time: %f ms", 
-				process_time * 1000);
-		cairo_show_text(cairo, buffer);
-		cairo_fill(cairo);
-
+		make_frame(p1, p2);
+		make_audio(p1, p2);
 		write_frame();
+		write_audio();
 		accumulator = 0;
 	}
 	exit_time = get_time();
@@ -480,12 +518,18 @@ write_frame()
 	for(int i = 0; i < width * height; i++) {
 		data[i] = htonl(data[i]);
 	}
-	write(1, data, sizeof(data[0]) * width * height);
+	write(3, data, sizeof(data[0]) * width * height);
 
 	data = cairo_image_surface_get_data(surface);
 	for(int i = 0; i < width * height; i++) {
 		data[i] = ntohl(data[i]);
 	}
+}
+
+void
+write_audio()
+{
+	write(4, audio_buffer, sizeof(audio_buffer[0]) * BUFFER_SIZE);
 }
 
 i32
@@ -530,8 +574,10 @@ void
 wait_frames(i32 time)
 {
 	cairo_surface_flush(surface);
+	memset(audio_buffer, 0, sizeof(audio_buffer));
 	for(int i = 0; i < time; i++) {
 		write_frame();
+		write_audio();
 	}
 }
 
