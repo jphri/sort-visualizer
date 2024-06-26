@@ -93,7 +93,6 @@ main()
 	height = HEIGHT;
 	surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width, height);
 	cairo = cairo_create(surface);
-
 	cairo_select_font_face(cairo, "Arial", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
 
 	prev_time = get_time();
@@ -105,7 +104,6 @@ main()
 		FN(); \
 		check_array(); \
 		wait_frames(60);
-	
 
 	skip_frames = 64;
 	DO_IT(radix_sort_4);
@@ -513,17 +511,8 @@ void
 write_frame()
 {
 	cairo_surface_flush(surface);
-	/* cairo fucked up endianness, lol */
 	uint32_t *data = cairo_image_surface_get_data(surface);
-	for(int i = 0; i < width * height; i++) {
-		data[i] = htonl(data[i]);
-	}
 	write(3, data, sizeof(data[0]) * width * height);
-
-	data = cairo_image_surface_get_data(surface);
-	for(int i = 0; i < width * height; i++) {
-		data[i] = ntohl(data[i]);
-	}
 }
 
 void
