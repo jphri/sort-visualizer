@@ -18,6 +18,8 @@ typedef int32_t i32;
 
 static double get_time();
 
+static float make_audio_wave(float time, float freq);
+
 static void make_audio(int v1, int v2);
 static void make_frame(int v1, int v2);
 static void render(int v1, int v2);
@@ -466,21 +468,15 @@ void
 make_audio(int p1, int p2)
 {
 	(void)p2;	
-	static double phase_accum = 0;
+	static float phase_accum = 0;
 	float freq_scale = (float)array[p1] / array_size;
 
 	for(int i = 0; i < BUFFER_SIZE; i++) {
-		const double new_freq = 220 + freq_scale * 780;
-		const double new_phase = 2 * 3.1415926535 * new_freq * phase_accum;
-		const double new_wave = sinf(new_phase);
+		const float new_wave = make_audio_wave(phase_accum, freq_scale);
+		const float old_wave = make_audio_wave(phase_accum, old_audio_p1);
 		
-		const double old_freq = 220 + old_audio_p1 * 780;
-		const double old_phase = 2 * 3.1415926535 * old_freq * phase_accum;
-		const double old_wave = sinf(old_phase);
-		
-		double wave = new_wave * (i / BUFFER_SIZE) + old_wave * (1 - i / BUFFER_SIZE);
+		float wave = new_wave * (i / BUFFER_SIZE) + old_wave * (1 - i / BUFFER_SIZE);
 		audio_buffer[i] = wave * 32767 / 8;
-
 		phase_accum += AUDIO_FREQ;
 	}
 	old_audio_p1 = freq_scale;
@@ -578,3 +574,10 @@ get_time()
 	return tm.tv_sec + tm.tv_nsec / 1000000000.0;
 }
 
+float
+make_audio_wave(float time, float freq_scale)
+{
+	const float freq = 220 + freq_scale * 780;
+	const float phase = 2 * 3.1415926535 * freq * time;
+	return sinf(phase) + sinf(phase * 2.0) / 2.0 + sinf(phase * 4.0) / 4.0;
+}
