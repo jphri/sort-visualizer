@@ -20,5 +20,5 @@ sort_visualizer: main_ffmpeg.o
 	$(CC) -o $@ $^ `pkg-config --libs cairo` -lm
 
 %.o: %.c
-	$(CC) -c -o $@ $< `pkg-config --cflags cairo`
+	$(CC) -c -O3 -o $@ $< `pkg-config --cflags cairo`
 

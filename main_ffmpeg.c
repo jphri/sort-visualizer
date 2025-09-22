@@ -400,7 +400,8 @@ make_frame(int p1, int p2)
 	cairo_rectangle(cairo, 0, 0, width, height);
 	cairo_fill(cairo);
 
-	for(i32 i = 0; i < array_size; i++) {
+	for(i32 x = 0; x < width; x++) {
+		i32 i = (array_size * x / width);
 		i32 bh = (array[i] * bar_height) / array_size;
 		double r, g, b;
 		if(i == p1 || i == p2) {
@@ -419,9 +420,9 @@ make_frame(int p1, int p2)
 			}
 		}
 
-		cairo_set_source_rgba(cairo, r, g, b, 0.5);
-		cairo_move_to(cairo, (i * width) / array_size, height);
-		cairo_line_to(cairo, (i * width) / array_size, height - bh);
+		cairo_set_source_rgba(cairo, r, g, b, 1.0);
+		cairo_move_to(cairo, x, height);
+		cairo_line_to(cairo, x, height - bh);
 		cairo_stroke(cairo);
 	}
 
