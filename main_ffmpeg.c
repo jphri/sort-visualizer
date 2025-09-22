@@ -6,9 +6,10 @@
 #include <assert.h>
 #include <stdint.h>
 #include <cairo.h>
+#include <string.h>
 
-#define WIDTH  800
-#define HEIGHT 600
+#define WIDTH  1280
+#define HEIGHT 720
 
 #define FPS         (1.0/60.0)
 #define AUDIO_FREQ  (1.0/44100.0)
@@ -507,7 +508,7 @@ void
 write_frame()
 {
 	cairo_surface_flush(surface);
-	uint32_t *data = cairo_image_surface_get_data(surface);
+	uint32_t *data = (uint32_t*)cairo_image_surface_get_data(surface);
 	write(3, data, sizeof(data[0]) * width * height);
 }
 
@@ -579,5 +580,5 @@ make_audio_wave(float time, float freq_scale)
 {
 	const float freq = 220 + freq_scale * 780;
 	const float phase = 2 * 3.1415926535 * freq * time;
-	return sinf(phase) + sinf(phase * 2.0) / 2.0 + sinf(phase * 4.0) / 4.0;
+	return sinf(phase);
 }
